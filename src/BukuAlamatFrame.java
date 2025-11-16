@@ -743,6 +743,22 @@ public class BukuAlamatFrame extends javax.swing.JFrame {
             }
         }
     }
+    private boolean isKontakExists(String nama, String telepon) throws SQLException {
+        // Query: Hitung berapa baris yang punya Nama DAN Telepon ini
+        String sql = "SELECT COUNT(*) FROM kontak WHERE nama = ? AND telepon = ?";
+        try (PreparedStatement pstmt = koneksi.prepareStatement(sql)) {
+            pstmt.setString(1, nama);
+            pstmt.setString(2, telepon);
+            
+            try (java.sql.ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    // Jika count > 0, data sudah ada
+                    return rs.getInt(1) > 0; 
+                }
+            }
+        }
+        return false;
+    }
     
     //Import export Data FIle txt
     private void exportDataToTXT(File fileToSave) {
@@ -773,40 +789,58 @@ public class BukuAlamatFrame extends javax.swing.JFrame {
     private void importDataFromTXT(File fileToOpen) {
         String sql = "INSERT INTO kontak (nama, telepon, email, alamat, properti, keterangan) VALUES (?, ?, ?, ?, ?, ?)";
         int importedCount = 0;
+        int duplicateCount = 0; // Tambahkan penghitung duplikat
 
         try (BufferedReader br = new BufferedReader(new FileReader(fileToOpen));
-             PreparedStatement pstmt = koneksi.prepareStatement(sql)) {
+             java.sql.PreparedStatement pstmt = koneksi.prepareStatement(sql)) {
             
+            // ... (Kode membaca header dan loop baris) ...
             String line;
             boolean isHeader = true;
             
             while ((line = br.readLine()) != null) {
                 if (isHeader) {
-                    isHeader = false; // Lewati baris header
+                    isHeader = false; 
                     continue;
                 }
 
-                // Gunakan Tab (\t) sebagai pemisah
-                String[] data = line.split("\t", -1); 
+                String[] data = line.split("\t", -1);
                 
-                // Asumsi data array memiliki panjang 6 setelah ID diabaikan (Nama, Telepon, Email, Alamat, Properti, Keterangan)
                 if (data.length >= 6) { 
-                    pstmt.setString(1, data[0]); // Nama
-                    pstmt.setString(2, data[1]); // Telepon
-                    pstmt.setString(3, data[2]); // Email
-                    pstmt.setString(4, data[3]); // Alamat
-                    pstmt.setString(5, data[4]); // Properti
-                    pstmt.setString(6, data[5]); // Keterangan
+                    String nama = data[0].trim();
+                    String telepon = data[1].trim();
+
+                    // --- LOGIKA PENCEGAHAN DUPLIKASI ---
+                    if (isKontakExists(nama, telepon)) {
+                        duplicateCount++;
+                        // Lewati baris ini dan lanjutkan ke baris berikutnya
+                        continue; 
+                    }
+                    // ------------------------------------
+                    
+                    // Jika data unik, tambahkan ke batch INSERT
+                    pstmt.setString(1, nama); 
+                    pstmt.setString(2, telepon); 
+                    pstmt.setString(3, data[2].trim()); // Email
+                    pstmt.setString(4, data[3].trim()); // Alamat
+                    pstmt.setString(5, data[4].trim()); // Properti
+                    pstmt.setString(6, data[5].trim()); // Keterangan
                     pstmt.addBatch();
                     importedCount++;
                 }
             }
             
             pstmt.executeBatch();
-            JOptionPane.showMessageDialog(this, "Impor " + importedCount + " data dari TXT berhasil!");
+            
+            // Berikan laporan lengkap
+            String message = "Impor berhasil: " + importedCount + " data baru dimasukkan. ";
+            if (duplicateCount > 0) {
+                 message += duplicateCount + " data diduplikasi dan dilewati.";
+            }
+            JOptionPane.showMessageDialog(this, message);
             loadData();
         } catch (IOException | SQLException e) {
-            JOptionPane.showMessageDialog(this, "Gagal impor data dari TXT: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Gagal impor data: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
     
